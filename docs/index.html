@@ -1,1 +1,333 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Мониторинг ITM: Аналитика и Продажи</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f5f7fa; margin: 0; padding: 30px; color: #333; }
+        .container { max-width: 1300px; margin: 0 auto; background: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        h1 { color: #2c3e50; font-size: 24px; margin-top: 0; border-bottom: 2px solid #eceff1; padding-bottom: 15px;}
+        .filter-panel { background: #ebf3f9; padding: 15px 20px; border-radius: 8px; margin-bottom: 25px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; border: 1px solid #d4e6f1; }
+        .filter-group { display: flex; align-items: center; gap: 10px; }
+        .filter-panel label { font-weight: bold; color: #2c3e50; font-size: 14px; }
+        .filter-panel input[type="date"], .filter-panel select, .modal-content input, .modal-content select { padding: 6px 10px; border: 1px solid #bdc3c7; border-radius: 4px; font-family: inherit; font-size: 14px; }
+        .btn-reset-filter { background: #3498db; color: white; border: none; padding: 7px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; }
+        .btn-reset-filter:hover { background: #2980b9; }
+        .leaders-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 25px; }
+        .leader-card { background: linear-gradient(135deg, #34495e, #2c3e50); color: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); position: relative; overflow: hidden; }
+        .leader-card.orange { background: linear-gradient(135deg, #e67e22, #d35400); }
+        .leader-card h3 { margin: 0 0 10px 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.9; }
+        .leader-card .name { font-size: 18px; font-weight: bold; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .leader-card .score { font-size: 24px; font-weight: 800; }
+        .leader-card .icon { position: absolute; right: 15px; bottom: 10px; font-size: 60px; opacity: 0.1; font-weight: bold; }
+        .upload-box { border: 2px dashed #3498db; padding: 25px; text-align: center; background: #f8fbfd; border-radius: 6px; margin-bottom: 20px; }
+        .upload-btn { display: inline-block; background: #3498db; color: white; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer; text-transform: uppercase; font-size: 14px; margin: 5px; }
+        .upload-btn:hover { background: #2980b9; }
+        .action-bar { margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+        .btn-act { border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px; color: white; }
+        .btn-green { background-color: #2ecc71; } .btn-green:hover { background-color: #27ae60; }
+        .btn-blue { background-color: #9b59b6; } .btn-blue:hover { background-color: #8e44ad; }
+        .btn-orange { background-color: #f39c12; } .btn-orange:hover { background-color: #d35400; }
+        .btn-red { background-color: #e74c3c; } .btn-red:hover { background-color: #c0392b; }
+        .btn-purple { background-color: #e67e22; } .btn-purple:hover { background-color: #d35400; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: #fff; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        th { background-color: #34495e; color: #ffffff; padding: 14px 12px; text-align: left; font-size: 13px; cursor: pointer; user-select: none; position: relative; }
+        th:hover { background-color: #2c3e50; }
+        th.sort-asc::after { content: " ▲"; font-size: 10px; position: absolute; right: 2px; }
+        th.sort-desc::after { content: " ▼"; font-size: 10px; position: absolute; right: 2px; }
+        td { padding: 12px 12px; border-bottom: 1px solid #e0e0e0; font-size: 13px; }
+        .agent-group-row { background-color: #fcfcfc; cursor: pointer; font-weight: bold; }
+        .agent-group-row:hover { background-color: #eaeded; }
+        .toggle-arrow { display: inline-block !important; width: 15px; transition: transform 0.2s ease; margin-right: 8px; color: #3498db; font-size: 14px; }
+        .expanded .toggle-arrow { transform: rotate(90deg); }
+        .day-row { background-color: #ffffff; display: none; }
+        .day-row td { padding-left: 30px; color: #555; background-color: #fafbfc; border-bottom: 1px dashed #e0e0e0; }
+        .day-row.alert-row td { background-color: #fdf2f2 !important; color: #c0392b; }
+        .alert-info-text { font-size: 11px; color: #e74c3c; display: block; font-weight: normal; margin-top: 2px; }
+        .total-row { background-color: #eaeded; font-weight: bold; }
+        .badge { background: #e8f5e9; color: #2e7d32; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+        .badge-blue { background: #e3f2fd; color: #0d47a1; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+        .time-badge { background: #efebe9; color: #4e342e; padding: 3px 6px; border-radius: 4px; font-family: monospace; }
+        .chart-container { margin-top: 40px; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        /* Модальное окно */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); align-items: center; justify-content: center; }
+        .modal-content { background: white; padding: 25px; border-radius: 8px; width: 350px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .modal-content h3 { margin-top: 0; color: #2c3e50; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .form-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 15px; }
+        .form-group label { font-weight: bold; font-size: 13px; color: #555; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Мониторинг ITM: Панель аналитики KPI и Продаж</h1>
+    
+    <div class="upload-box">
+        <p style="margin: 0 0 15px 0; color: #555; font-size: 15px;">Перетащите новые файлы выгрузки Excel в это окно или нажмите кнопку ниже:</p>
+        <label for="file-selector" class="upload-btn">Выбрать файлы выгрузки</label>
+        <input type="file" id="file-selector" accept=".xlsx, .xls" multiple style="position: absolute; left: -9999px;">
+    </div>
+
+    <div class="action-bar hidden" id="action-block">
+        <button class="btn-act btn-purple" onclick="openModal()">➕ Добавить заявку вручную</button>
+        <button class="btn-act btn-green" onclick="exportToExcel()">📥 Скачать отчет в Excel</button>
+        <button class="btn-act btn-blue" onclick="exportBackup()">💾 Сохранить бэкап базы</button>
+        <label class="btn-act btn-orange" style="display:inline-block; margin:0;" for="backup-installer">📂 Восстановить из бэкапа</label>
+        <input type="file" id="backup-installer" accept=".json" style="position:absolute; left:-9999px;" onchange="importBackup(this)">
+        <button class="btn-act btn-red" id="clear-data">🗑️ Сброс базы данных</button>
+    </div>
+
+    <div class="filter-panel hidden" id="filter-block">
+        <div class="filter-group">
+            <label for="date-from">Период с:</label>
+            <input type="date" id="date-from">
+        </div>
+        <div class="filter-group">
+            <label for="date-to">по:</label>
+            <input type="date" id="date-to">
+        </div>
+        <button class="btn-reset-filter" id="btn-reset-dates">Сбросить фильтр дат</button>
+    </div>
+
+    <div class="leaders-grid hidden" id="leaders-section">
+        <div class="leader-card">
+            <h3>🏆 Лидер по звонкам за период</h3>
+            <div class="name" id="top-calls-name">-</div>
+            <div class="score" id="top-calls-value">0 звонков</div>
+            <div class="icon">📞</div>
+        </div>
+        <div class="leader-card orange">
+            <h3>⏳ Больше всех в эфире за период</h3>
+            <div class="name" id="top-hours-name">-</div>
+            <div class="score" id="top-hours-value">00:00 ч.</div>
+            <div class="icon">🕒</div>
+        </div>
+    </div>
+
+    <div id="results" class="hidden">
+        <h2>Сводная статистика работы и продаж</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th style="cursor: default; width:110px;">Период / Дата</th>
+                    <th onclick="sortTable(1)">ФИО Сотрудника</th>
+                    <th style="cursor: default; width:70px;">Начало</th>
+                    <th style="cursor: default; width:70px;">Конец</th>
+                    <th onclick="sortTable(4)">Часы</th>
+                    <th onclick="sortTable(5)">Звонки</th>
+                    <th onclick="sortTable(6)">Дозвоны</th>
+                    <th onclick="sortTable(7)">ШПД</th>
+                    <th onclick="sortTable(8)">ТВ</th>
+                    <th onclick="sortTable(9)">Зв/Заявку</th>
+                </tr>
+            </thead>
+            <tbody id="stats-table-body"></tbody>
+            <tfoot></tfoot>
+        </table>
+    </div>
+
+    <div class="chart-container hidden" id="chart-block">
+        <h2>График динамики звонков по дням</h2>
+        <canvas id="analyticsChart" style="max-height: 400px;"></canvas>
+    </div>
+</div>
+
+<div class="modal" id="order-modal">
+    <div class="modal-content">
+        <h3>Добавить заявку</h3>
+        <div class="form-group">
+            <label for="modal-agent">Выберите агента:</label>
+            <select id="modal-agent"></select>
+        </div>
+        <div class="form-group">
+            <label for="modal-date">Дата заявки:</label>
+            <input type="date" id="modal-date">
+        </div>
+        <div class="form-group">
+            <label for="modal-spd">Количество ШПД:</label>
+            <input type="number" id="modal-spd" value="0" min="0">
+        </div>
+        <div class="form-group">
+            <label for="modal-tv">Количество ТВ:</label>
+            <input type="number" id="modal-tv" value="0" min="0">
+        </div>
+        <div class="modal-actions">
+            <button class="btn-act btn-red" style="padding:7px 12px;" onclick="closeModal()">Отмена</button>
+            <button class="btn-act btn-green" style="padding:7px 12px;" onclick="saveOrder()">Сохранить</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const fileSelector = document.getElementById('file-selector');
+    const dropZone = document.querySelector('.upload-box');
+    const tableBody = document.getElementById('stats-table-body');
+    const tableFoot = document.querySelector('table tfoot');
+    const clearBtn = document.getElementById('clear-data');
+    const leadersSection = document.getElementById('leaders-section');
+    const resultsSection = document.getElementById('results');
+    const filterBlock = document.getElementById('filter-block');
+    const actionBlock = document.getElementById('action-block');
+    const chartBlock = document.getElementById('chart-block');
+    const inputFrom = document.getElementById('date-from');
+    const inputTo = document.getElementById('date-to');
+    const btnResetDates = document.getElementById('btn-reset-dates');
+
+    let globalStorage = JSON.parse(localStorage.getItem('itm_calls_data')) || {};
+    let currentSort = { column: 1, direction: 'asc' };
+    let myChart = null;
+
+    inputFrom.addEventListener('change', () => renderData(false));
+    inputTo.addEventListener('change', () => renderData(false));
+    btnResetDates.addEventListener('click', resetDateFilters);
+    fileSelector.addEventListener('change', (e) => { if (e.target.files.length) handleFiles(e.target.files); });
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); });
+    dropZone.addEventListener('drop', (e) => { e.preventDefault(); if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+    clearBtn.addEventListener('click', () => { if(confirm("Удалить всю историю?")) { globalStorage = {}; localStorage.removeItem('itm_calls_data'); renderData(true); } });
+
+    renderData(true);
+
+    function handleFiles(files) {
+        let filesProcessed = 0;
+        for (let i = 0; i < files.length; i++) {
+            processFile(files[i], () => { filesProcessed++; if (filesProcessed === files.length) { localStorage.setItem('itm_calls_data', JSON.stringify(globalStorage)); renderData(true); } });
+        }
+    }
+    function parseExcelDate(dateVal) {
+        if (!dateVal) return ""; let s = dateVal.toString().trim();
+        if (!isNaN(s) && s !== "") { const d = new Date(Math.round((parseFloat(s) - 25569) * 86400 * 1000)); return `${d.getUTCFullYear()}-${(d.getUTCMonth() + 1).toString().padStart(2, '0')}-${d.getUTCDate().toString().padStart(2, '0')}`; }
+        if (s.includes('T')) return s.split('T')[0]; return s.split('.').reverse().join('-');
+    }
+    function excelTimeToSeconds(timeVal) {
+        if (timeVal === undefined || timeVal === null) return 0; let s = timeVal.toString().trim();
+        if (!isNaN(s) && s !== "") { let num = parseFloat(s); return num < 1 ? Math.round(num * 24 * 3600) : Math.round(num); }
+        const p = s.split(':'); return p.length >= 2 ? (parseInt(p[0], 10)||0) * 3600 + (parseInt(p[1], 10)||0) * 60 + (parseInt(p[2], 10)||0) : 0;
+    }
+    function secondsToHHMMSS(sec) { return `${Math.floor(sec/3600).toString().padStart(2,'0')}:${Math.floor((sec%3600)/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`; }
+    function secondsToHHMM(sec) { return `${Math.floor(sec/3600).toString().padStart(2,'0')}:${Math.floor((sec%3600)/60).toString().padStart(2,'0')}`; }
+    function formatToRussianDate(dStr) { return dStr && dStr.includes('-') ? dStr.split('-').reverse().join('.') : dStr; }
+
+    function processFile(file, callback) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, { type: 'array' });
+                const sheet = workbook.Sheets[workbook.SheetNames[0]]; const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                if (rawRows.length <= 10) { callback(); return; }
+                const headers = rawRows[10]; const dataRows = rawRows.slice(11);
+                const aIdx = headers.indexOf('Сотрудник'); const dIdx = headers.indexOf('Дата'); const tIdx = headers.indexOf('Время'); const durIdx = headers.indexOf('Длительность');
+                if (aIdx === -1 || tIdx === -1 || durIdx === -1 || dIdx === -1) { alert(`Ошибка структуры!`); callback(); return; }
+                dataRows.forEach(row => {
+                    const agent = row[aIdx]; const dateRaw = row[dIdx]; const timeRaw = row[tIdx]; const durRaw = row[durIdx];
+                    if (!agent || dateRaw === undefined || timeRaw === undefined || durRaw === undefined) return;
+                    const dateStr = parseExcelDate(dateRaw); const timeInSec = excelTimeToSeconds(timeRaw); const durInSec = excelTimeToSeconds(durRaw); const aName = agent.toString().trim();
+                    if (!dateStr || !aName) return; const key = `${dateStr}_${aName}`;
+                    if (!globalStorage[key]) globalStorage[key] = { date: dateStr, agent: aName, timesInSec: [], totalCalls: 0, answeredCalls: 0, spd: 0, tv: 0 };
+                    if (!globalStorage[key].spd) globalStorage[key].spd = 0; if (!globalStorage[key].tv) globalStorage[key].tv = 0;
+                    if (!globalStorage[key].timesInSec.map(String).includes(timeInSec.toString())) { globalStorage[key].timesInSec.push(timeInSec); globalStorage[key].totalCalls++; if (durInSec > 10) globalStorage[key].answeredCalls++; }
+                });
+            } catch (err) { console.error(err); }
+            callback();
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function openModal() {
+        const modalAgent = document.getElementById('modal-agent');
+        modalAgent.innerHTML = '';
+        let uniqueAgents = [...new Set(Object.values(globalStorage).map(item => item.agent))].sort();
+        if(uniqueAgents.length === 0) { alert("Сначала загрузите хотя бы один файл выгрузки звонков, чтобы в базе появились агенты!"); return; }
+        uniqueAgents.forEach(a => { modalAgent.innerHTML += `<option value="${a}">${a}</option>`; });
+        document.getElementById('modal-date').value = new Date().toISOString().split('T')[0];
+        document.getElementById('modal-spd').value = 0; document.getElementById('modal-tv').value = 0;
+        document.getElementById('order-modal').style.display = 'flex';
+    }
+    function closeModal() { document.getElementById('order-modal').style.display = 'none'; }
+    function saveOrder() {
+        const agent = document.getElementById('modal-agent').value;
+        const date = document.getElementById('modal-date').value;
+        const spd = parseInt(document.getElementById('modal-spd').value, 10) || 0;
+        const tv = parseInt(document.getElementById('modal-tv').value, 10) || 0;
+        if(!date || !agent) return alert("Заполните дату и агента!");
+        const key = `${date}_${agent}`;
+        if (!globalStorage[key]) { globalStorage[key] = { date: date, agent: agent, timesInSec: [], totalCalls: 0, answeredCalls: 0, spd: 0, tv: 0 }; }
+        globalStorage[key].spd = (globalStorage[key].spd || 0) + spd; globalStorage[key].tv = (globalStorage[key].tv || 0) + tv;
+        localStorage.setItem('itm_calls_data', JSON.stringify(globalStorage));
+        closeModal(); alert("Заявка сохранена!"); renderData(false);
+    }
+
+    function resetDateFilters() { const keys = Object.keys(globalStorage); if(keys.length === 0) return; const dates = keys.map(k => globalStorage[k].date).sort(); inputFrom.value = dates[0]; inputTo.value = dates[dates.length - 1]; renderData(false); }
+    function toggleGroup(aClass, rEl) { const dRows = document.querySelectorAll('.' + aClass); if (rEl.classList.contains('expanded')) { rEl.classList.remove('expanded'); dRows.forEach(r => r.style.display = 'none'); } else { rEl.classList.add('expanded'); dRows.forEach(r => r.style.display = 'table-row'); } }
+
+    function renderData(isFirstLoad = false) {
+        const keys = Object.keys(globalStorage);
+        if (keys.length === 0) { tableBody.innerHTML = ''; tableFoot.innerHTML = ''; leadersSection.classList.add('hidden'); resultsSection.classList.add('hidden'); filterBlock.classList.add('hidden'); actionBlock.classList.add('hidden'); chartBlock.classList.add('hidden'); return; }
+        if (isFirstLoad === true) { const allDates = keys.map(k => globalStorage[k].date).sort(); inputFrom.value = allDates[0]; inputTo.value = allDates[allDates.length - 1]; }
+        const fromDate = inputFrom.value; const toDate = inputTo.value;
+        let dailyRows = [];
+        keys.forEach(key => {
+            const item = globalStorage[key]; if ((fromDate && item.date < fromDate) || (toDate && item.date > toDate)) return;
+            item.timesInSec.sort((a, b) => a - b); const first = item.timesInSec[0] || 0; const last = item.timesInSec[item.timesInSec.length - 1] || 0; const diff = last - first;
+            dailyRows.push({ date: item.date, agent: item.agent, startStr: first ? secondsToHHMMSS(first) : "-", endStr: last ? secondsToHHMMSS(last) : "-", workSeconds: diff > 0 ? diff : 0, totalCalls: item.totalCalls || 0, answeredCalls: item.answeredCalls || 0, spd: item.spd || 0, tv: item.tv || 0 });
+        });
+        calculateLeaders(dailyRows);
+        let agentGroups = {};
+        dailyRows.forEach(row => {
+            if (!agentGroups[row.agent]) agentGroups[row.agent] = { agent: row.agent, workSeconds: 0, totalCalls: 0, answeredCalls: 0, spd: 0, tv: 0, days: [] };
+            agentGroups[row.agent].workSeconds += row.workSeconds; agentGroups[row.agent].totalCalls += row.totalCalls; agentGroups[row.agent].answeredCalls += row.answeredCalls; agentGroups[row.agent].spd += row.spd; agentGroups[row.agent].tv += row.tv; agentGroups[row.agent].days.push(row);
+        });
+        let groupsArray = Object.values(agentGroups);
+        applySortingLogic(groupsArray, currentSort.column, currentSort.direction);
+        buildTable(groupsArray, fromDate, toDate); buildChart(dailyRows);
+        filterBlock.classList.remove('hidden'); leadersSection.classList.remove('hidden'); resultsSection.classList.remove('hidden'); actionBlock.classList.remove('hidden'); chartBlock.classList.remove('hidden');
+    }
+    function buildTable(groups, fromDate, toDate) {
+        tableBody.innerHTML = ''; tableFoot.innerHTML = ''; let gTotalSec = 0; let gTotalCalls = 0; let gTotalAns = 0; let gSpd = 0; let gTv = 0; let aCounter = 0;
+        groups.forEach(group => {
+            gTotalSec += group.workSeconds; gTotalCalls += group.totalCalls; gTotalAns += group.answeredCalls; gSpd += group.spd; gTv += group.tv; aCounter++;
+            const cId = `agent-id-${aCounter}`; const pStr = (fromDate && toDate) ? `Сводно` : `Всего`;
+            const totalOrders = group.spd + group.tv;
+            const callsPerOrderGroup = totalOrders > 0 ? Math.round(group.totalCalls / totalOrders) : "-";
+            const gTr = document.createElement('tr'); gTr.className = 'agent-group-row'; gTr.setAttribute('onclick', `toggleGroup('${cId}', this)`);
+            gTr.innerHTML = `<td><span class="toggle-arrow">►</span> ${pStr}</td><td><strong>${group.agent}</strong></td><td>-</td><td>-</td><td>${secondsToHHMM(group.workSeconds)}</td><td>${group.totalCalls}</td><td><span class="badge">${group.answeredCalls}</span></td><td><span class="badge-blue">${group.spd}</span></td><td><span class="badge-blue">${group.tv}</span></td><td><strong>${callsPerOrderGroup}</strong></td>`;
+            tableBody.appendChild(gTr);
+            group.days.sort((a, b) => b.date.localeCompare(a.date));
+            group.days.forEach(day => {
+                const dTr = document.createElement('tr'); dTr.className = `day-row ${cId}`;
+                const hWorked = day.workSeconds / 3600; let cPerHour = hWorked > 0 ? (day.totalCalls / hWorked) : day.totalCalls;
+                let isViol = (day.workSeconds > 0 && cPerHour < 40); let aStr = isViol ? `<span class="alert-info-text">⚠️ Низкая интенсивность: ${Math.round(cPerHour)} зв/час</span>` : '';
+                if (isViol) dTr.classList.add('alert-row');
+                const dayOrders = day.spd + day.tv;
+                const callsPerOrderDay = dayOrders > 0 ? Math.round(day.totalCalls / dayOrders) : "-";
+                dTr.innerHTML = `<td>${formatToRussianDate(day.date)}</td><td>${day.agent} ${aStr}</td><td><span class="time-badge">${day.startStr}</span></td><td><span class="time-badge">${day.endStr}</span></td><td>${secondsToHHMM(day.workSeconds)}</td><td>${day.totalCalls}</td><td><span class="badge" ${isViol ? 'style="background:#f39c12; color:white;"':''}>${day.answeredCalls}</span></td><td>${day.spd}</td><td>${day.tv}</td><td>${callsPerOrderDay}</td>`;
+                tableBody.appendChild(dTr);
+            });
+        });
+        const finalOrdersTotal = gSpd + gTv;
+        const finalCallsPerOrder = finalOrdersTotal > 0 ? Math.round(gTotalCalls / finalOrdersTotal) : "-";
+        const fTr = document.createElement('tr'); fTr.className = 'total-row'; fTr.innerHTML = `<td colspan="4" style="text-align: right;">ОБЩИЙ ИТОГ ЗА ВСЕХ:</td><td>${secondsToHHMM(gTotalSec)}</td><td>${gTotalCalls}</td><td><span class="badge" style="background:#2ecc71; color:white;">${gTotalAns}</span></td><td><span class="badge-blue" style="background:#0d47a1; color:white;">${gSpd}</span></td><td><span class="badge-blue" style="background:#0d47a1; color:white;">${gTv}</span></td><td><strong>${finalCallsPerOrder}</strong></td>`;
+        tableFoot.appendChild(fTr);
+    }
+    function buildChart(rows) {
+        let cData = {}; rows.forEach(r => { if (!cData[r.date]) cData[r.date] = { t: 0, a: 0 }; cData[r.date].t += r.totalCalls; cData[r.date].a += r.answeredCalls; });
+        const sDates = Object.keys(cData).sort(); if (myChart) myChart.destroy();
+        const ctx = document.getElementById('analyticsChart').getContext('2d');
+        myChart = new Chart(ctx, { type: 'line', data: { labels: sDates.map(formatToRussianDate), datasets: [{ label: 'Всего звонков', data: sDates.map(d => cData[d].t), borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', fill: true, tension: 0.2 }, { label: 'Дозвоны (>10с)', data: sDates.map(d => cData[d].a), borderColor: '#2ecc71', backgroundColor: 'rgba(46, 204, 113, 0.1)', fill: true, tension: 0.2 }] }, options: { responsive: true } });
+    }
+    function exportToExcel() {
+        let tData = [["Дата", "Сотрудник", "Начало", "Конец", "Отработано", "Всего звонков", "Дозвоны (>10с)", "ШПД", "ТВ", "Звонков/Заявку"]];
+        Object.keys(globalStorage).sort().forEach(k => { const item = globalStorage[k]; item.timesInSec.sort((a,b)=>a-b); const f = item.timesInSec[0] || 0; const l = item.timesInSec[item.timesInSec.length-1] || 0; const oTotal = (item.spd||0) + (item.tv||0); const cPerO = oTotal > 0 ? Math.round(item.totalCalls / oTotal) : "-"; tData.push([formatToRussianDate(item.date), item.agent, f?secondsToHHMMSS(f):"-", l?secondsToHHMMSS(l):"-", secondsToHHMM(l - f > 0 ? l - f : 0), item.totalCalls, item.answeredCalls, item.spd||0, item.tv||0, cPerO]); });
+        const wb = XLSX.utils.book_new(); const ws = XLSX.utils.aoa_to_sheet(tData); XLSX.utils.book_append_sheet(wb, ws, "Статистика ITM"); XLSX.writeFile(wb, `Отчет_ITM_Продажи.xlsx`);
+    }
+    function exportBackup() { const dStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(globalStorage)); const dl = document.createElement('a'); dl.setAttribute("href", dStr); dl.setAttribute("download", `Backup_ITM_Full.json`); document.body.appendChild(dl); dl.click(); dl.remove(); }
+    function importBackup(ins) { const f = ins.files[0]; if (!f) return; const r = new FileReader(); r.onload = function(e) { try { globalStorage = Object.assign({}, globalStorage, JSON.parse(e.target.result)); localStorage.setItem('itm_calls_data', JSON.stringify(globalStorage)); alert("Успешно!"); renderData(true); } catch(err) { alert("Ошибка файла бэкапа!"); } }; r.readAsText(f); }
+    function calculateLeaders(rows) { let t = {}; rows.forEach(r => { if(!t[r.agent]) t[r.agent] = { c: 0, s: 0 }; t[r.agent].c += r.totalCalls; t[r.agent].s += r.workSeconds; }); let tC = "-", tH = "-"; let mC = 0; let mS = 0; for(let a in t) { if(t[a].c > mC) { mC = t[a].c; tC = a; } if(t[a].s > mS) { mS = t[a].s; tH = a; } } document.getElementById('top-calls-name').innerText = tC; document.getElementById('top-calls-value').innerText = mC + " звонков"; document.getElementById('top-hours-name').innerText = tH; document.getElementById('top-hours-value').innerText = secondsToHHMM(mS) + " ч."; }
+    function sortTable(cIdx) { if (cIdx !== 1 && cIdx !== 4 && cIdx !== 5 && cIdx !== 6 && cIdx !== 7 && cIdx !== 8 && cIdx !== 9) return; if (currentSort.column === cIdx) { currentSort.direction = currentSort.direction === 'desc' ? 'asc' : 'desc'; } else { currentSort = { column: cIdx, direction: 'desc' }; } const ths = document.querySelectorAll('th'); ths.forEach(th => th.className = ''); ths[cIdx === 1 ? 1 : (cIdx === 4 ? 4 : (cIdx === 5 ? 5 : (cIdx === 6 ? 6 : (cIdx === 7 ? 7 : (cIdx === 8 ? 8 : 9))))).toString()].className = currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc'; renderData(false); }
+    function applySortingLogic(arr, col, dir) { arr.sort((a, b) => { let vA, vB; if (col === 1) { vA = a.agent; vB = b.agent; } if (col === 4) { vA = a.workSeconds; vB = b.workSeconds; } if (col === 5) { vA = a.totalCalls; vB = b.totalCalls; } if (col === 6) { vA = a.answeredCalls; vB = b.answeredCalls; } if (col === 7) { vA = a.spd; vB = b.spd; } if (col === 8) { vA = a.tv; vB = b.tv; } if (col === 9) { const tA = a.spd + a.tv; const tB = b.spd + b.tv; vA = tA > 0 ? (a.totalCalls / tA) : 999999; vB = tB > 0 ? (b.totalCalls / tB) : 999999; } if (typeof vA === 'string') { return dir === 'asc' ? vA.localeCompare(vB) : vB.localeCompare(vA); } else { return dir === 'asc' ? vA - vB : vB - vA; } }); }
+</script>
+</body>
+</html>
 
