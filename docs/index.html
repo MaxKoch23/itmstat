@@ -70,7 +70,6 @@
         <label for="file-selector" class="upload-btn">Выбрать файлы выгрузки</label>
         <input type="file" id="file-selector" accept=".xlsx, .xls" multiple style="position: absolute; left: -9999px;">
     </div>
-
     <div class="action-bar hidden" id="action-block">
         <button class="btn-act btn-purple" onclick="openModal()">➕ Добавить заявку вручную</button>
         <button class="btn-act btn-green" onclick="exportToExcel()">📥 Скачать отчет в Excel</button>
@@ -79,7 +78,6 @@
         <input type="file" id="backup-installer" accept=".json" style="position:absolute; left:-9999px;" onchange="importBackup(this)">
         <button class="btn-act btn-red" id="clear-data">🗑️ Сброс базы данных</button>
     </div>
-
     <div class="filter-panel hidden" id="filter-block">
         <div class="filter-group">
             <label for="date-from">Период с:</label>
@@ -91,7 +89,6 @@
         </div>
         <button class="btn-reset-filter" id="btn-reset-dates">Сбросить фильтр дат</button>
     </div>
-
     <div class="leaders-grid hidden" id="leaders-section">
         <div class="leader-card">
             <h3>🏆 Лидер по звонкам за период</h3>
@@ -106,7 +103,6 @@
             <div class="icon">🕒</div>
         </div>
     </div>
-
     <div id="results" class="hidden">
         <h2>Сводная статистика работы и продаж</h2>
         <table>
@@ -128,13 +124,11 @@
             <tfoot></tfoot>
         </table>
     </div>
-
     <div class="chart-container hidden" id="chart-block">
         <h2>График динамики звонков по дням</h2>
         <canvas id="analyticsChart" style="max-height: 400px;"></canvas>
     </div>
 </div>
-
 <div class="modal" id="order-modal">
     <div class="modal-content">
         <h3>Добавить заявку</h3>
@@ -160,7 +154,6 @@
         </div>
     </div>
 </div>
-
 <script>
     const fileSelector = document.getElementById('file-selector');
     const dropZone = document.querySelector('.upload-box');
@@ -176,58 +169,164 @@
     const inputTo = document.getElementById('date-to');
     const btnResetDates = document.getElementById('btn-reset-dates');
 
-    let globalStorage = JSON.parse(localStorage.getItem('itm_calls_data')) || {};
+    // ==========================================
+    // ВСТАВЬТЕ СЮДА ВАШУ ССЫЛКУ ИЗ FIREBASE С /data.json НА КОНЦЕ
+    // ==========================================
+    const FIREBASE_URL = "https://itm-analytics-default-rtdb.firebaseio.com/data.json";
+
+    let globalStorage = {};
     let currentSort = { column: 1, direction: 'asc' };
     let myChart = null;
 
     inputFrom.addEventListener('change', () => renderData(false));
     inputTo.addEventListener('change', () => renderData(false));
     btnResetDates.addEventListener('click', resetDateFilters);
-    fileSelector.addEventListener('change', (e) => { if (e.target.files.length) handleFiles(e.target.files); });
+    
+    fileSelector.addEventListener('change', (e) => { 
+        if (e.target.files.length) handleFiles(e.target.files); 
+    });
+    
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); });
-    dropZone.addEventListener('drop', (e) => { e.preventDefault(); if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
-    clearBtn.addEventListener('click', () => { if(confirm("Удалить всю историю?")) { globalStorage = {}; localStorage.removeItem('itm_calls_data'); renderData(true); } });
+    dropZone.addEventListener('drop', (e) => { 
+        e.preventDefault(); 
+        if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); 
+    });
 
-    renderData(true);
+    // Сброс базы теперь очищает онлайн-базу
+    clearBtn.addEventListener('click', () => { 
+        if(confirm("Удалить ВСЮ историю из онлайн-базы?")) { 
+            fetch(FIREBASE_URL, { method: 'PUT', body: JSON.stringify({}) })
+            .then(() => { 
+                globalStorage = {}; 
+                renderData(true); 
+                alert("База полностью очищена!"); 
+            });
+        } 
+    });
+
+    // Загрузка данных из ОНЛАЙН-БАЗЫ при открытии сайта
+    function loadOnlineData() {
+        tableBody.innerHTML = '<tr><td colspan="10" style="text-align:center;"> Загрузка онлайн-базы данных...</td></tr>';
+        fetch(FIREBASE_URL)
+            .then(res => res.json())
+            .then(data => {
+                globalStorage = data || {};
+                renderData(true);
+            })
+            .catch(err => {
+                alert("Ошибка подключения к онлайн-базе!");
+                console.error(err);
+            });
+    }
+
+    // Запускаем загрузку из сети
+    loadOnlineData();
+
+    // Сохранение в ОНЛАЙН-БАЗУ
+    function saveOnlineData() {
+        fetch(FIREBASE_URL, {
+            method: 'PUT', 
+            body: JSON.stringify(globalStorage)
+        })
+        .then(() => renderData(true))
+        .catch(err => alert("Не удалось сохранить данные в облако!"));
+    }
 
     function handleFiles(files) {
         let filesProcessed = 0;
         for (let i = 0; i < files.length; i++) {
-            processFile(files[i], () => { filesProcessed++; if (filesProcessed === files.length) { localStorage.setItem('itm_calls_data', JSON.stringify(globalStorage)); renderData(true); } });
+            processFile(files[i], () => { 
+                filesProcessed++; 
+                if (filesProcessed === files.length) { 
+                    saveOnlineData(); // Отправляем в облако
+                } 
+            });
         }
     }
+
     function parseExcelDate(dateVal) {
-        if (!dateVal) return ""; let s = dateVal.toString().trim();
-        if (!isNaN(s) && s !== "") { const d = new Date(Math.round((parseFloat(s) - 25569) * 86400 * 1000)); return `${d.getUTCFullYear()}-${(d.getUTCMonth() + 1).toString().padStart(2, '0')}-${d.getUTCDate().toString().padStart(2, '0')}`; }
-        if (s.includes('T')) return s.split('T')[0]; return s.split('.').reverse().join('-');
+        if (!dateVal) return ""; 
+        let s = dateVal.toString().trim();
+        if (!isNaN(s) && s !== "") { 
+            const d = new Date(Math.round((parseFloat(s) - 25569) * 86400 * 1000)); 
+            return `${d.getUTCFullYear()}-${(d.getUTCMonth() + 1).toString().padStart(2, '0')}-${d.getUTCDate().toString().padStart(2, '0')}`; 
+        }
+        if (s.includes('T')) return s.split('T')[0]; 
+        return s.split('.').reverse().join('-');
     }
+
     function excelTimeToSeconds(timeVal) {
-        if (timeVal === undefined || timeVal === null) return 0; let s = timeVal.toString().trim();
-        if (!isNaN(s) && s !== "") { let num = parseFloat(s); return num < 1 ? Math.round(num * 24 * 3600) : Math.round(num); }
-        const p = s.split(':'); return p.length >= 2 ? (parseInt(p[0], 10)||0) * 3600 + (parseInt(p[1], 10)||0) * 60 + (parseInt(p[2], 10)||0) : 0;
+        if (timeVal === undefined || timeVal === null) return 0; 
+        let s = timeVal.toString().trim();
+        if (!isNaN(s) && s !== "") { 
+            let num = parseFloat(s); 
+            return num < 1 ? Math.round(num * 24 * 3600) : Math.round(num); 
+        }
+        const p = s.split(':'); 
+        return p.length >= 2 ? (parseInt(p[0], 10)||0) * 3600 + (parseInt(p[1], 10)||0) * 60 + (parseInt(p[2], 10)||0) : 0;
     }
-    function secondsToHHMMSS(sec) { return `${Math.floor(sec/3600).toString().padStart(2,'0')}:${Math.floor((sec%3600)/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`; }
-    function secondsToHHMM(sec) { return `${Math.floor(sec/3600).toString().padStart(2,'0')}:${Math.floor((sec%3600)/60).toString().padStart(2,'0')}`; }
-    function formatToRussianDate(dStr) { return dStr && dStr.includes('-') ? dStr.split('-').reverse().join('.') : dStr; }
+
+    function secondsToHHMMSS(sec) { 
+        return `${Math.floor(sec/3600).toString().padStart(2,'0')}:${Math.floor((sec%3600)/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`; 
+    }
+
+    function secondsToHHMM(sec) { 
+        return `${Math.floor(sec/3600).toString().padStart(2,'0')}:${Math.floor((sec%3600)/60).toString().padStart(2,'0')}`; 
+    }
+
+    function formatToRussianDate(dStr) { 
+        return dStr && dStr.includes('-') ? dStr.split('-').reverse().join('.') : dStr; 
+    }
 
     function processFile(file, callback) {
         const reader = new FileReader();
-        reader.onload = function(e) {
+        reader.onload = function(e) { 
             try {
-                const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, { type: 'array' });
-                const sheet = workbook.Sheets[workbook.SheetNames[0]]; const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                const data = new Uint8Array(e.target.result); 
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheet = workbook.Sheets[workbook.SheetNames[0]]; 
+                const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
                 if (rawRows.length <= 10) { callback(); return; }
-                const headers = rawRows[10]; const dataRows = rawRows.slice(11);
-                const aIdx = headers.indexOf('Сотрудник'); const dIdx = headers.indexOf('Дата'); const tIdx = headers.indexOf('Время'); const durIdx = headers.indexOf('Длительность');
-                if (aIdx === -1 || tIdx === -1 || durIdx === -1 || dIdx === -1) { alert(`Ошибка структуры!`); callback(); return; }
+                const headers = rawRows[10]; 
+                const dataRows = rawRows.slice(11);
+                const aIdx = headers.indexOf('Сотрудник'); 
+                const dIdx = headers.indexOf('Дата'); 
+                const tIdx = headers.indexOf('Время'); 
+                const durIdx = headers.indexOf('Длительность');
+                
+                if (aIdx === -1 || tIdx === -1 || durIdx === -1 || dIdx === -1) { 
+                    alert(`Ошибка структуры!`); 
+                    callback(); 
+                    return; 
+                }
+                
                 dataRows.forEach(row => {
-                    const agent = row[aIdx]; const dateRaw = row[dIdx]; const timeRaw = row[tIdx]; const durRaw = row[durIdx];
+                    const agent = row[aIdx]; 
+                    const dateRaw = row[dIdx]; 
+                    const timeRaw = row[tIdx]; 
+                    const durRaw = row[durIdx];
+                    
                     if (!agent || dateRaw === undefined || timeRaw === undefined || durRaw === undefined) return;
-                    const dateStr = parseExcelDate(dateRaw); const timeInSec = excelTimeToSeconds(timeRaw); const durInSec = excelTimeToSeconds(durRaw); const aName = agent.toString().trim();
-                    if (!dateStr || !aName) return; const key = `${dateStr}_${aName}`;
-                    if (!globalStorage[key]) globalStorage[key] = { date: dateStr, agent: aName, timesInSec: [], totalCalls: 0, answeredCalls: 0, spd: 0, tv: 0 };
-                    if (!globalStorage[key].spd) globalStorage[key].spd = 0; if (!globalStorage[key].tv) globalStorage[key].tv = 0;
-                    if (!globalStorage[key].timesInSec.map(String).includes(timeInSec.toString())) { globalStorage[key].timesInSec.push(timeInSec); globalStorage[key].totalCalls++; if (durInSec > 10) globalStorage[key].answeredCalls++; }
+                    
+                    const dateStr = parseExcelDate(dateRaw); 
+                    const timeInSec = excelTimeToSeconds(timeRaw); 
+                    const durInSec = excelTimeToSeconds(durRaw); 
+                    const aName = agent.toString().trim();
+                    
+                    if (!dateStr || !aName) return; 
+                    const key = `${dateStr}_${aName}`;
+                    
+                    if (!globalStorage[key]) {
+                        globalStorage[key] = { date: dateStr, agent: aName, timesInSec: [], totalCalls: 0, answeredCalls: 0, spd: 0, tv: 0 };
+                    }
+                    if (!globalStorage[key].spd) globalStorage[key].spd = 0; 
+                    if (!globalStorage[key].tv) globalStorage[key].tv = 0;
+                    
+                    if (!globalStorage[key].timesInSec.map(String).includes(timeInSec.toString())) { 
+                        globalStorage[key].timesInSec.push(timeInSec); 
+                        globalStorage[key].totalCalls++; 
+                        if (durInSec > 10) globalStorage[key].answeredCalls++; 
+                    }
                 });
             } catch (err) { console.error(err); }
             callback();
@@ -239,95 +338,324 @@
         const modalAgent = document.getElementById('modal-agent');
         modalAgent.innerHTML = '';
         let uniqueAgents = [...new Set(Object.values(globalStorage).map(item => item.agent))].sort();
-        if(uniqueAgents.length === 0) { alert("Сначала загрузите хотя бы один файл выгрузки звонков, чтобы в базе появились агенты!"); return; }
+        if(uniqueAgents.length === 0) { 
+            alert("Сначала загрузите хотя бы один файл звонков!"); 
+            return; 
+        }
         uniqueAgents.forEach(a => { modalAgent.innerHTML += `<option value="${a}">${a}</option>`; });
         document.getElementById('modal-date').value = new Date().toISOString().split('T')[0];
-        document.getElementById('modal-spd').value = 0; document.getElementById('modal-tv').value = 0;
+        document.getElementById('modal-spd').value = 0; 
+        document.getElementById('modal-tv').value = 0;
         document.getElementById('order-modal').style.display = 'flex';
     }
-    function closeModal() { document.getElementById('order-modal').style.display = 'none'; }
+
+    function closeModal() { 
+        document.getElementById('order-modal').style.display = 'none'; 
+    }
+
     function saveOrder() {
         const agent = document.getElementById('modal-agent').value;
         const date = document.getElementById('modal-date').value;
         const spd = parseInt(document.getElementById('modal-spd').value, 10) || 0;
         const tv = parseInt(document.getElementById('modal-tv').value, 10) || 0;
+        
         if(!date || !agent) return alert("Заполните дату и агента!");
+        
         const key = `${date}_${agent}`;
-        if (!globalStorage[key]) { globalStorage[key] = { date: date, agent: agent, timesInSec: [], totalCalls: 0, answeredCalls: 0, spd: 0, tv: 0 }; }
-        globalStorage[key].spd = (globalStorage[key].spd || 0) + spd; globalStorage[key].tv = (globalStorage[key].tv || 0) + tv;
-        localStorage.setItem('itm_calls_data', JSON.stringify(globalStorage));
-        closeModal(); alert("Заявка сохранена!"); renderData(false);
+        if (!globalStorage[key]) { 
+            globalStorage[key] = { date: date, agent: agent, timesInSec: [], totalCalls: 0, answeredCalls: 0, spd: 0, tv: 0 }; 
+        }
+        globalStorage[key].spd = (globalStorage[key].spd || 0) + spd; 
+        globalStorage[key].tv = (globalStorage[key].tv || 0) + tv;
+        
+        closeModal();
+        saveOnlineData(); // Отправляем ручную заявку в облако
     }
 
-    function resetDateFilters() { const keys = Object.keys(globalStorage); if(keys.length === 0) return; const dates = keys.map(k => globalStorage[k].date).sort(); inputFrom.value = dates[0]; inputTo.value = dates[dates.length - 1]; renderData(false); }
-    function toggleGroup(aClass, rEl) { const dRows = document.querySelectorAll('.' + aClass); if (rEl.classList.contains('expanded')) { rEl.classList.remove('expanded'); dRows.forEach(r => r.style.display = 'none'); } else { rEl.classList.add('expanded'); dRows.forEach(r => r.style.display = 'table-row'); } }
+    function resetDateFilters() { 
+        const keys = Object.keys(globalStorage); 
+        if(keys.length === 0) return; 
+        const dates = keys.map(k => globalStorage[k].date).sort(); 
+        inputFrom.value = dates[0]; 
+        inputTo.value = dates[dates.length - 1]; 
+        renderData(false); 
+    }
+
+    function toggleGroup(aClass, rEl) { 
+        const dRows = document.querySelectorAll('.' + aClass); 
+        if (rEl.classList.contains('expanded')) { 
+            rEl.classList.remove('expanded'); 
+            dRows.forEach(r => r.style.display = 'none'); 
+        } else { 
+            rEl.classList.add('expanded'); 
+            dRows.forEach(r => r.style.display = 'table-row'); 
+        } 
+    }
 
     function renderData(isFirstLoad = false) {
         const keys = Object.keys(globalStorage);
-        if (keys.length === 0) { tableBody.innerHTML = ''; tableFoot.innerHTML = ''; leadersSection.classList.add('hidden'); resultsSection.classList.add('hidden'); filterBlock.classList.add('hidden'); actionBlock.classList.add('hidden'); chartBlock.classList.add('hidden'); return; }
-        if (isFirstLoad === true) { const allDates = keys.map(k => globalStorage[k].date).sort(); inputFrom.value = allDates[0]; inputTo.value = allDates[allDates.length - 1]; }
-        const fromDate = inputFrom.value; const toDate = inputTo.value;
+        if (keys.length === 0) { 
+            tableBody.innerHTML = ''; 
+            tableFoot.innerHTML = ''; 
+            leadersSection.classList.add('hidden'); 
+            resultsSection.classList.add('hidden'); 
+            filterBlock.classList.add('hidden'); 
+            actionBlock.classList.add('hidden'); 
+            chartBlock.classList.add('hidden'); 
+            return; 
+        }
+        if (isFirstLoad === true) { 
+            const allDates = keys.map(k => globalStorage[k].date).sort(); 
+            inputFrom.value = allDates[0]; 
+            inputTo.value = allDates[allDates.length - 1]; 
+        }
+        
+        const fromDate = inputFrom.value; 
+        const toDate = inputTo.value;
         let dailyRows = [];
+        
         keys.forEach(key => {
-            const item = globalStorage[key]; if ((fromDate && item.date < fromDate) || (toDate && item.date > toDate)) return;
-            item.timesInSec.sort((a, b) => a - b); const first = item.timesInSec[0] || 0; const last = item.timesInSec[item.timesInSec.length - 1] || 0; const diff = last - first;
-            dailyRows.push({ date: item.date, agent: item.agent, startStr: first ? secondsToHHMMSS(first) : "-", endStr: last ? secondsToHHMMSS(last) : "-", workSeconds: diff > 0 ? diff : 0, totalCalls: item.totalCalls || 0, answeredCalls: item.answeredCalls || 0, spd: item.spd || 0, tv: item.tv || 0 });
+            const item = globalStorage[key]; 
+            if (!item || (fromDate && item.date < fromDate) || (toDate && item.date > toDate)) return;
+            
+            let secArr = item.timesInSec ? item.timesInSec.map(Number) : [];
+            secArr.sort((a, b) => a - b); 
+            const first = secArr[0] || 0; 
+            const last = secArr[secArr.length - 1] || 0; 
+            const diff = last - first;
+            
+            dailyRows.push({ 
+                date: item.date, 
+                agent: item.agent, 
+                startStr: first ? secondsToHHMMSS(first) : "-", 
+                endStr: last ? secondsToHHMMSS(last) : "-", 
+                workSeconds: diff > 0 ? diff : 0, 
+                totalCalls: item.totalCalls || 0, 
+                answeredCalls: item.answeredCalls || 0, 
+                spd: item.spd || 0, 
+                tv: item.tv || 0 
+            });
         });
+        
         calculateLeaders(dailyRows);
+        
         let agentGroups = {};
         dailyRows.forEach(row => {
             if (!agentGroups[row.agent]) agentGroups[row.agent] = { agent: row.agent, workSeconds: 0, totalCalls: 0, answeredCalls: 0, spd: 0, tv: 0, days: [] };
-            agentGroups[row.agent].workSeconds += row.workSeconds; agentGroups[row.agent].totalCalls += row.totalCalls; agentGroups[row.agent].answeredCalls += row.answeredCalls; agentGroups[row.agent].spd += row.spd; agentGroups[row.agent].tv += row.tv; agentGroups[row.agent].days.push(row);
+            agentGroups[row.agent].workSeconds += row.workSeconds; 
+            agentGroups[row.agent].totalCalls += row.totalCalls; 
+            agentGroups[row.agent].answeredCalls += row.answeredCalls; 
+            agentGroups[row.agent].spd += row.spd; 
+            agentGroups[row.agent].tv += row.tv; 
+            agentGroups[row.agent].days.push(row);
         });
+        
         let groupsArray = Object.values(agentGroups);
         applySortingLogic(groupsArray, currentSort.column, currentSort.direction);
-        buildTable(groupsArray, fromDate, toDate); buildChart(dailyRows);
-        filterBlock.classList.remove('hidden'); leadersSection.classList.remove('hidden'); resultsSection.classList.remove('hidden'); actionBlock.classList.remove('hidden'); chartBlock.classList.remove('hidden');
+        buildTable(groupsArray, fromDate, toDate); 
+        buildChart(dailyRows);
+        
+        filterBlock.classList.remove('hidden'); 
+        leadersSection.classList.remove('hidden'); 
+        resultsSection.classList.remove('hidden'); 
+        actionBlock.classList.remove('hidden'); 
+        chartBlock.classList.remove('hidden');
     }
+
     function buildTable(groups, fromDate, toDate) {
-        tableBody.innerHTML = ''; tableFoot.innerHTML = ''; let gTotalSec = 0; let gTotalCalls = 0; let gTotalAns = 0; let gSpd = 0; let gTv = 0; let aCounter = 0;
+        tableBody.innerHTML = ''; 
+        tableFoot.innerHTML = ''; 
+        let gTotalSec = 0; 
+        let gTotalCalls = 0; 
+        let gTotalAns = 0; 
+        let gSpd = 0; 
+        let gTv = 0; 
+        let aCounter = 0;
+        
         groups.forEach(group => {
-            gTotalSec += group.workSeconds; gTotalCalls += group.totalCalls; gTotalAns += group.answeredCalls; gSpd += group.spd; gTv += group.tv; aCounter++;
-            const cId = `agent-id-${aCounter}`; const pStr = (fromDate && toDate) ? `Сводно` : `Всего`;
-            const totalOrders = group.spd + group.tv;
+            gTotalSec += group.workSeconds; 
+            gTotalCalls += group.totalCalls; 
+            gTotalAns += group.answeredCalls; 
+            gSpd += group.spd; 
+            gTv += group.tv; 
+            aCounter++;
+            
+            const cId = `agent-id-${aCounter}`; 
+            const pStr = (fromDate && toDate) ? `Сводно` : `Всего`;
+            const totalOrders = group.spd + group.tv; 
             const callsPerOrderGroup = totalOrders > 0 ? Math.round(group.totalCalls / totalOrders) : "-";
-            const gTr = document.createElement('tr'); gTr.className = 'agent-group-row'; gTr.setAttribute('onclick', `toggleGroup('${cId}', this)`);
+            
+            const gTr = document.createElement('tr'); 
+            gTr.className = 'agent-group-row'; 
+            gTr.setAttribute('onclick', `toggleGroup('${cId}', this)`);
             gTr.innerHTML = `<td><span class="toggle-arrow">►</span> ${pStr}</td><td><strong>${group.agent}</strong></td><td>-</td><td>-</td><td>${secondsToHHMM(group.workSeconds)}</td><td>${group.totalCalls}</td><td><span class="badge">${group.answeredCalls}</span></td><td><span class="badge-blue">${group.spd}</span></td><td><span class="badge-blue">${group.tv}</span></td><td><strong>${callsPerOrderGroup}</strong></td>`;
             tableBody.appendChild(gTr);
+            
             group.days.sort((a, b) => b.date.localeCompare(a.date));
             group.days.forEach(day => {
-                const dTr = document.createElement('tr'); dTr.className = `day-row ${cId}`;
-                const hWorked = day.workSeconds / 3600; let cPerHour = hWorked > 0 ? (day.totalCalls / hWorked) : day.totalCalls;
-                let isViol = (day.workSeconds > 0 && cPerHour < 40); let aStr = isViol ? `<span class="alert-info-text">⚠️ Низкая интенсивность: ${Math.round(cPerHour)} зв/час</span>` : '';
+                const dTr = document.createElement('tr'); 
+                dTr.className = `day-row ${cId}`;
+                const hWorked = day.workSeconds / 3600; 
+                let cPerHour = hWorked > 0 ? (day.totalCalls / hWorked) : day.totalCalls;
+                let isViol = (day.workSeconds > 0 && cPerHour < 40); 
+                let aStr = isViol ? `<span class="alert-info-text"> Низкая интенсивность: ${Math.round(cPerHour)} зв/час</span>` : '';
+                
                 if (isViol) dTr.classList.add('alert-row');
-                const dayOrders = day.spd + day.tv;
+                const dayOrders = day.spd + day.tv; 
                 const callsPerOrderDay = dayOrders > 0 ? Math.round(day.totalCalls / dayOrders) : "-";
                 dTr.innerHTML = `<td>${formatToRussianDate(day.date)}</td><td>${day.agent} ${aStr}</td><td><span class="time-badge">${day.startStr}</span></td><td><span class="time-badge">${day.endStr}</span></td><td>${secondsToHHMM(day.workSeconds)}</td><td>${day.totalCalls}</td><td><span class="badge" ${isViol ? 'style="background:#f39c12; color:white;"':''}>${day.answeredCalls}</span></td><td>${day.spd}</td><td>${day.tv}</td><td>${callsPerOrderDay}</td>`;
                 tableBody.appendChild(dTr);
             });
         });
-        const finalOrdersTotal = gSpd + gTv;
+        
+        const finalOrdersTotal = gSpd + gTv; 
         const finalCallsPerOrder = finalOrdersTotal > 0 ? Math.round(gTotalCalls / finalOrdersTotal) : "-";
-        const fTr = document.createElement('tr'); fTr.className = 'total-row'; fTr.innerHTML = `<td colspan="4" style="text-align: right;">ОБЩИЙ ИТОГ ЗА ВСЕХ:</td><td>${secondsToHHMM(gTotalSec)}</td><td>${gTotalCalls}</td><td><span class="badge" style="background:#2ecc71; color:white;">${gTotalAns}</span></td><td><span class="badge-blue" style="background:#0d47a1; color:white;">${gSpd}</span></td><td><span class="badge-blue" style="background:#0d47a1; color:white;">${gTv}</span></td><td><strong>${finalCallsPerOrder}</strong></td>`;
+        const fTr = document.createElement('tr'); 
+        fTr.className = 'total-row'; 
+        fTr.innerHTML = `<td colspan="4" style="text-align: right;">ОБЩИЙ ИТОГ ЗА ВСЕХ:</td><td>${secondsToHHMM(gTotalSec)}</td><td>${gTotalCalls}</td><td><span class="badge" style="background:#2ecc71; color:white;">${gTotalAns}</span></td><td><span class="badge-blue" style="background:#0d47a1; color:white;">${gSpd}</span></td><td><span class="badge-blue" style="background:#0d47a1; color:white;">${gTv}</span></td><td><strong>${finalCallsPerOrder}</strong></td>`;
         tableFoot.appendChild(fTr);
     }
+
     function buildChart(rows) {
-        let cData = {}; rows.forEach(r => { if (!cData[r.date]) cData[r.date] = { t: 0, a: 0 }; cData[r.date].t += r.totalCalls; cData[r.date].a += r.answeredCalls; });
-        const sDates = Object.keys(cData).sort(); if (myChart) myChart.destroy();
+        let cData = {}; 
+        rows.forEach(r => { 
+            if (!cData[r.date]) cData[r.date] = { t: 0, a: 0 }; 
+            cData[r.date].t += r.totalCalls; 
+            cData[r.date].a += r.answeredCalls; 
+        });
+        const sDates = Object.keys(cData).sort(); 
+        if (myChart) myChart.destroy();
         const ctx = document.getElementById('analyticsChart').getContext('2d');
-        myChart = new Chart(ctx, { type: 'line', data: { labels: sDates.map(formatToRussianDate), datasets: [{ label: 'Всего звонков', data: sDates.map(d => cData[d].t), borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', fill: true, tension: 0.2 }, { label: 'Дозвоны (>10с)', data: sDates.map(d => cData[d].a), borderColor: '#2ecc71', backgroundColor: 'rgba(46, 204, 113, 0.1)', fill: true, tension: 0.2 }] }, options: { responsive: true } });
+        myChart = new Chart(ctx, { 
+            type: 'line', 
+            data: { 
+                labels: sDates.map(formatToRussianDate), 
+                datasets: [
+                    { label: 'Всего звонков', data: sDates.map(d => cData[d].t), borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', fill: true, tension: 0.2 }, 
+                    { label: 'Дозвоны (>10с)', data: sDates.map(d => cData[d].a), borderColor: '#2ecc71', backgroundColor: 'rgba(46, 204, 113, 0.1)', fill: true, tension: 0.2 }
+                ] 
+            }, 
+            options: { responsive: true } 
+        });
     }
+
     function exportToExcel() {
         let tData = [["Дата", "Сотрудник", "Начало", "Конец", "Отработано", "Всего звонков", "Дозвоны (>10с)", "ШПД", "ТВ", "Звонков/Заявку"]];
-        Object.keys(globalStorage).sort().forEach(k => { const item = globalStorage[k]; item.timesInSec.sort((a,b)=>a-b); const f = item.timesInSec[0] || 0; const l = item.timesInSec[item.timesInSec.length-1] || 0; const oTotal = (item.spd||0) + (item.tv||0); const cPerO = oTotal > 0 ? Math.round(item.totalCalls / oTotal) : "-"; tData.push([formatToRussianDate(item.date), item.agent, f?secondsToHHMMSS(f):"-", l?secondsToHHMMSS(l):"-", secondsToHHMM(l - f > 0 ? l - f : 0), item.totalCalls, item.answeredCalls, item.spd||0, item.tv||0, cPerO]); });
-        const wb = XLSX.utils.book_new(); const ws = XLSX.utils.aoa_to_sheet(tData); XLSX.utils.book_append_sheet(wb, ws, "Статистика ITM"); XLSX.writeFile(wb, `Отчет_ITM_Продажи.xlsx`);
+        Object.keys(globalStorage).sort().forEach(k => { 
+            const item = globalStorage[k]; 
+            if(!item) return; 
+            
+            let sArr = item.timesInSec ? item.timesInSec.map(Number).sort((a,b)=>a-b) : []; 
+            const f = sArr[0] || 0; 
+            const l = sArr[sArr.length-1] || 0; 
+            const oTotal = (item.spd||0) + (item.tv||0); 
+            const cPerO = oTotal > 0 ? Math.round(item.totalCalls / oTotal) : "-"; 
+            
+            tData.push([
+                formatToRussianDate(item.date), 
+                item.agent, 
+                f?secondsToHHMMSS(f):"-", 
+                l?secondsToHHMMSS(l):"-", 
+                secondsToHHMM(l - f > 0 ? l - f : 0), 
+                item.totalCalls||0, 
+                item.answeredCalls||0, 
+                item.spd||0, 
+                item.tv||0, 
+                cPerO
+            ]); 
+        });
+        const wb = XLSX.utils.book_new(); 
+        const ws = XLSX.utils.aoa_to_sheet(tData); 
+        XLSX.utils.book_append_sheet(wb, ws, "Статистика ITM"); 
+        XLSX.writeFile(wb, `Отчет_ITM_Продажи.xlsx`);
     }
-    function exportBackup() { const dStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(globalStorage)); const dl = document.createElement('a'); dl.setAttribute("href", dStr); dl.setAttribute("download", `Backup_ITM_Full.json`); document.body.appendChild(dl); dl.click(); dl.remove(); }
-    function importBackup(ins) { const f = ins.files[0]; if (!f) return; const r = new FileReader(); r.onload = function(e) { try { globalStorage = Object.assign({}, globalStorage, JSON.parse(e.target.result)); localStorage.setItem('itm_calls_data', JSON.stringify(globalStorage)); alert("Успешно!"); renderData(true); } catch(err) { alert("Ошибка файла бэкапа!"); } }; r.readAsText(f); }
-    function calculateLeaders(rows) { let t = {}; rows.forEach(r => { if(!t[r.agent]) t[r.agent] = { c: 0, s: 0 }; t[r.agent].c += r.totalCalls; t[r.agent].s += r.workSeconds; }); let tC = "-", tH = "-"; let mC = 0; let mS = 0; for(let a in t) { if(t[a].c > mC) { mC = t[a].c; tC = a; } if(t[a].s > mS) { mS = t[a].s; tH = a; } } document.getElementById('top-calls-name').innerText = tC; document.getElementById('top-calls-value').innerText = mC + " звонков"; document.getElementById('top-hours-name').innerText = tH; document.getElementById('top-hours-value').innerText = secondsToHHMM(mS) + " ч."; }
-    function sortTable(cIdx) { if (cIdx !== 1 && cIdx !== 4 && cIdx !== 5 && cIdx !== 6 && cIdx !== 7 && cIdx !== 8 && cIdx !== 9) return; if (currentSort.column === cIdx) { currentSort.direction = currentSort.direction === 'desc' ? 'asc' : 'desc'; } else { currentSort = { column: cIdx, direction: 'desc' }; } const ths = document.querySelectorAll('th'); ths.forEach(th => th.className = ''); ths[cIdx === 1 ? 1 : (cIdx === 4 ? 4 : (cIdx === 5 ? 5 : (cIdx === 6 ? 6 : (cIdx === 7 ? 7 : (cIdx === 8 ? 8 : 9))))).toString()].className = currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc'; renderData(false); }
-    function applySortingLogic(arr, col, dir) { arr.sort((a, b) => { let vA, vB; if (col === 1) { vA = a.agent; vB = b.agent; } if (col === 4) { vA = a.workSeconds; vB = b.workSeconds; } if (col === 5) { vA = a.totalCalls; vB = b.totalCalls; } if (col === 6) { vA = a.answeredCalls; vB = b.answeredCalls; } if (col === 7) { vA = a.spd; vB = b.spd; } if (col === 8) { vA = a.tv; vB = b.tv; } if (col === 9) { const tA = a.spd + a.tv; const tB = b.spd + b.tv; vA = tA > 0 ? (a.totalCalls / tA) : 999999; vB = tB > 0 ? (b.totalCalls / tB) : 999999; } if (typeof vA === 'string') { return dir === 'asc' ? vA.localeCompare(vB) : vB.localeCompare(vA); } else { return dir === 'asc' ? vA - vB : vB - vA; } }); }
+
+    function exportBackup() { 
+        const dStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(globalStorage)); 
+        const dl = document.createElement('a'); 
+        dl.setAttribute("href", dStr); 
+        dl.setAttribute("download", `Backup_ITM_Full.json`); 
+        document.body.appendChild(dl); 
+        dl.click(); 
+        dl.remove(); 
+    }
+
+    function importBackup(ins) { 
+        const f = ins.files[0]; 
+        if (!f) return; 
+        const r = new FileReader(); 
+        r.onload = function(e) { 
+            try { 
+                globalStorage = Object.assign({}, globalStorage, JSON.parse(e.target.result)); 
+                saveOnlineData(); 
+                alert("Успешно импортировано в облако!"); 
+            } catch(err) { 
+                alert("Ошибка файла бэкапа!"); 
+            } 
+        }; 
+        r.readAsText(f); 
+    }
+
+    function calculateLeaders(rows) { 
+        let t = {}; 
+        rows.forEach(r => { 
+            if(!t[r.agent]) t[r.agent] = { c: 0, s: 0 }; 
+            t[r.agent].c += r.totalCalls; 
+            t[r.agent].s += r.workSeconds; 
+        }); 
+        
+        let tC = "-", tH = "-"; 
+        let mC = 0, mS = 0; 
+        
+        for(let a in t) { 
+            if(t[a].c > mC) { mC = t[a].c; tC = a; } 
+            if(t[a].s > mS) { mS = t[a].s; tH = a; } 
+        } 
+        
+        document.getElementById('top-calls-name').innerText = tC; 
+        document.getElementById('top-calls-value').innerText = mC + " звонков"; 
+        document.getElementById('top-hours-name').innerText = tH; 
+        document.getElementById('top-hours-value').innerText = secondsToHHMM(mS) + " ч."; 
+    }
+
+    function sortTable(cIdx) { 
+        if (cIdx !== 1 && cIdx !== 4 && cIdx !== 5 && cIdx !== 6 && cIdx !== 7 && cIdx !== 8 && cIdx !== 9) return; 
+        
+        if (currentSort.column === cIdx) { 
+            currentSort.direction = currentSort.direction === 'desc' ? 'asc' : 'desc'; 
+        } else { 
+            currentSort = { column: cIdx, direction: 'desc' }; 
+        } 
+        
+        const ths = document.querySelectorAll('th'); 
+        ths.forEach(th => th.className = ''); 
+        ths[cIdx === 1 ? 1 : (cIdx === 4 ? 4 : (cIdx === 5 ? 5 : (cIdx === 6 ? 6 : (cIdx === 7 ? 7 : (cIdx === 8 ? 8 : 9))))).toString()].className = currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc'; 
+        renderData(false); 
+    }
+
+    function applySortingLogic(arr, col, dir) { 
+        arr.sort((a, b) => { 
+            let vA, vB; 
+            if (col === 1) { vA = a.agent; vB = b.agent; } 
+            if (col === 4) { vA = a.workSeconds; vB = b.workSeconds; } 
+            if (col === 5) { vA = a.totalCalls; vB = b.totalCalls; } 
+            if (col === 6) { vA = a.answeredCalls; vB = b.answeredCalls; } 
+            if (col === 7) { vA = a.spd; vB = b.spd; } 
+            if (col === 8) { vA = a.tv; vB = b.tv; } 
+            if (col === 9) { 
+                const tA = a.spd + a.tv; 
+                const tB = b.spd + b.tv; 
+                vA = tA > 0 ? (a.totalCalls / tA) : 999999; 
+                vB = tB > 0 ? (b.totalCalls / tB) : 999999; 
+            } 
+            
+            if (typeof vA === 'string') { 
+                return dir === 'asc' ? vA.localeCompare(vB) : vB.localeCompare(vA); 
+            } else { 
+                return dir === 'asc' ? vA - vB : vB - vA; 
+            } 
+        }); 
+    }
 </script>
 </body>
 </html>
-
